@@ -1,0 +1,85 @@
+graph-RAG_CookBook
+Copyright 2026 Momonga and contributors
+
+Licensed under the Apache License, Version 2.0 (the "License");
+see LICENSE for the full text.
+
+----------------------------------------------------------------------
+Scope of this notice
+----------------------------------------------------------------------
+
+This repository contains framework code only. Graph artifacts published
+by users of this framework — including the example artifact published
+from the reference Big Bang Theory corpus — may incorporate content from
+third-party sources subject to their own licenses.
+
+Users of this framework are responsible for ensuring they have the
+rights to publish their derived graph data, including any obligations
+of the original source content (attribution, share-alike, etc.).
+
+----------------------------------------------------------------------
+Reference example corpus
+----------------------------------------------------------------------
+
+The reference example corpus shipped under examples/reference-corpus/
+is derived from English Wikipedia articles about The Big Bang Theory
+(2007 sitcom). Wikipedia content is licensed under the Creative Commons
+Attribution-ShareAlike 4.0 International License (CC BY-SA 4.0):
+
+    https://creativecommons.org/licenses/by-sa/4.0/
+
+Each fetched article retains a `source-url` field in its frontmatter
+linking to the original Wikipedia page, satisfying CC BY-SA attribution
+requirements.
+
+Any redistribution of the reference corpus or derivative graphs built
+from it must:
+
+  1. Preserve the source-url attribution.
+  2. License the resulting work under CC BY-SA 4.0 or compatible terms
+     (note: this applies to the *graph data*, not the framework code,
+     which remains Apache-2.0).
+
+This dual licensing — Apache-2.0 for the framework, CC BY-SA 4.0 for
+the example data — is intentional and standard for tools that ship
+example datasets.
+
+----------------------------------------------------------------------
+Third-party libraries
+----------------------------------------------------------------------
+
+This project depends on numerous third-party libraries listed in
+pyproject.toml. Each is licensed under its own terms; see the
+respective project's LICENSE file for details. Notable dependencies:
+
+  * Anthropic SDK         — MIT
+  * Playwright            — Apache-2.0
+  * NetworkX              — BSD-3-Clause
+  * FalkorDB              — Server Side Public License (SSPL)
+                            (used as a service via network protocol;
+                             SSPL obligations do not apply to client
+                             code under standard interpretation)
+  * Qdrant client         — Apache-2.0
+  * Mistune               — BSD-3-Clause
+  * python-frontmatter    — MIT
+  * Trafilatura           — Apache-2.0 / GPL-3.0+ (dual)
+  * Dagster               — Apache-2.0
+  * Typer                 — MIT
+
+----------------------------------------------------------------------
+Acknowledgements
+----------------------------------------------------------------------
+
+This framework's design draws on prior art from:
+
+  * LightRAG (HKU)         — Apache-2.0
+    https://github.com/HKUDS/LightRAG
+  * Microsoft GraphRAG     — MIT
+    https://github.com/microsoft/graphrag
+  * graphify (safishamsi)  — MIT
+    https://github.com/safishamsi/graphify
+  * Graphiti (Zep)         — Apache-2.0
+    https://github.com/getzep/graphiti
+
+Specific design influences are noted in code comments and in
+.claude/DECISIONS.md (DEC-001).
