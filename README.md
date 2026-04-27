@@ -191,13 +191,7 @@ Both paths produce identical artifacts. CI eval gates run on every update; if ex
 
 ## Built with Claude Code
 
-This framework was designed and built with [Claude Code](https://www.anthropic.com/claude-code) and a 14-agent delegation system. The agent skills used during development are published separately at [graph-rag-skills](./skills/) and can be installed into any Claude Code agent team:
-
-```bash
-cd skills && ./install.sh
-```
-
-If you're building your own knowledge graphs with Claude Code, the skills bundle is reusable across projects.
+This framework was designed and built with [Claude Code](https://www.anthropic.com/claude-code) and a multi-agent delegation system. The agent skills referenced by the build pipeline (`obsidian-vault-emission`, `knowledge-graph-construction`, `rag-evaluation`, `playwright-documentation-scraping`, `graph-artifact-publishing`) are installed globally into your Claude Code skills directory rather than bundled in this repo — see [CLAUDE.md](./CLAUDE.md) for details and [`.claude/state/DECISIONS.md`](./.claude/state/DECISIONS.md) DEC-012 for the rationale.
 
 ## Contributing
 
@@ -213,4 +207,4 @@ The reference example corpus (Wikipedia content) is licensed under [CC BY-SA 4.0
 
 ## Acknowledgements
 
-`graph-RAG_CookBook` builds on prior art from [LightRAG](https://github.com/HKUDS/LightRAG), [Microsoft GraphRAG](https://github.com/microsoft/graphrag), [graphify](https://github.com/safishamsi/graphify), and [Graphiti](https://github.com/getzep/graphiti). Each influenced specific design decisions documented in [.claude/DECISIONS.md](./.claude/DECISIONS.md). The framework's existence is owed to the open-source work of those teams.
+`graph-RAG_CookBook` builds on prior art from [LightRAG](https://github.com/HKUDS/LightRAG), [Microsoft GraphRAG](https://github.com/microsoft/graphrag), [graphify](https://github.com/safishamsi/graphify), and [Graphiti](https://github.com/getzep/graphiti). Each influenced specific design decisions documented in [.claude/state/DECISIONS.md](./.claude/state/DECISIONS.md). The framework's existence is owed to the open-source work of those teams.
