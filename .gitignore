@@ -1,5 +1,77 @@
-/.DS_Store
-/.claude
-/CLAUDE.md
-/SPEC.md
-/install.sh
+# macOS
+**/.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg
+*.egg-info/
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+MANIFEST
+
+# Virtual environments
+.venv/
+.venv.nosync/
+venv/
+env/
+ENV/
+.env
+.env.local
+.env.*.local
+
+# Test / lint caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
+.hypothesis/
+.tox/
+.nox/
+
+# Type checker / IDE
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+*~
+
+# Project-derived artifacts (per SPEC Appendix B)
+/corpus/
+/corpus-a/
+/corpus-b/
+/vault/
+/publish/
+/cache/
+/runs/
+/.cache/
+
+# Eval runs (history.jsonl IS tracked; runs/ output dirs are not)
+/evals/runs/
+
+# Logs
+*.log
+logs/
+
+# Node (if any tooling slips in)
+node_modules/
