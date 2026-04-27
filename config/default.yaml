@@ -1,0 +1,24 @@
+# Default project configuration. Override via env vars (KG_*) or per-deploy YAML.
+# Sprint 1 — minimal scaffolding. Components add sections as they're implemented.
+
+graph_db:
+  host: localhost
+  port: 6390           # docker-compose maps host 6390 → FalkorDB container 6379
+  database: graph_rag
+
+vector_db:
+  host: localhost
+  port: 6333
+  grpc_port: 6334
+
+llm:
+  extraction_model: claude-sonnet-4-7
+  categorization_model: claude-haiku-4-5
+  embedding_model: voyage-3-large
+
+paths:
+  corpus_dir: ./corpus
+  vault_dir: ./vault
+  publish_dir: ./publish
+  cache_dir: ./cache
+  runs_dir: ./runs

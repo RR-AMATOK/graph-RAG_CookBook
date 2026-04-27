@@ -1,0 +1,21 @@
+# Playwright scraper source configurations (SPEC §6.2, FR-9).
+# Sprint 1 ships the schema; actual sources are added in Sprint 6+ (Phase 6).
+
+sources: []
+
+# Example schema (do not enable until scrapers are implemented):
+#
+# sources:
+#   - name: example-docs
+#     base_url: https://docs.example.com
+#     sitemap_url: https://docs.example.com/sitemap.xml
+#     include_patterns:
+#       - "/guide/.*"
+#       - "/reference/.*"
+#     exclude_patterns:
+#       - "/blog/.*"
+#     auth:
+#       type: none   # none | basic | storage_state
+#     rate_limit:
+#       requests_per_second: 1
+#       jitter_seconds: 0.5

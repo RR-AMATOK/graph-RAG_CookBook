@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/schemas/graph-v1.schema.json",
+  "title": "graph-RAG_CookBook Graph Artifact (v1)",
+  "description": "Schema for the published graph.json artifact. Consumers MUST validate against this schema before use (SPEC §7.4, FR-13.1). Schema versioning: breaking changes bump the major version and publish to a new URL (e.g., graph-v2.schema.json).",
+  "type": "object",
+  "required": ["schema_version", "metadata", "nodes", "edges"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "description": "Major.minor version of this schema. Pinned consumers fail closed on major-version bump.",
+      "pattern": "^\\d+\\.\\d+$",
+      "examples": ["1.0"]
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["generated_at", "doc_count", "entity_count", "edge_count"],
+      "additionalProperties": true,
+      "properties": {
+        "generated_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 UTC timestamp of artifact generation."
+        },
+        "framework_commit": {
+          "type": "string",
+          "description": "Git SHA of the framework that produced this artifact.",
+          "pattern": "^[0-9a-f]{7,40}$"
+        },
+        "source_manifest_hashes": {
+          "type": "object",
+          "description": "Per-source content hash for traceability.",
+          "additionalProperties": {"type": "string"}
+        },
+        "doc_count": {"type": "integer", "minimum": 0},
+        "entity_count": {"type": "integer", "minimum": 0},
+        "edge_count": {"type": "integer", "minimum": 0},
+        "prompt_version": {
+          "type": "string",
+          "description": "Version of the extraction prompt used (Mandatory Rule #8). Allows consumers to detect prompt changes."
+        }
+      }
+    },
+    "nodes": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/node"},
+      "description": "All graph nodes. Document and Entity nodes share the same array; distinguish by `type`."
+    },
+    "edges": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/edge"},
+      "description": "All graph edges. `source` and `target` reference node `id` values."
+    }
+  },
+  "$defs": {
+    "node": {
+      "type": "object",
+      "required": ["id", "type", "properties"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Stable, hash-based identifier. Format: `<prefix>_<hex>` (e.g., `doc_7fa3c0d1`, `ent_business_capability`).",
+          "pattern": "^[a-z]+_[A-Za-z0-9_]+$"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["Document", "Entity"]
+        },
+        "subtype": {
+          "type": "string",
+          "description": "Entity subtype (e.g., Concept, Person, Organization). Optional for Document nodes."
+        },
+        "properties": {
+          "oneOf": [
+            {"$ref": "#/$defs/documentProperties"},
+            {"$ref": "#/$defs/entityProperties"}
+          ]
+        }
+      }
+    },
+    "documentProperties": {
+      "type": "object",
+      "required": ["canonical_path", "content_hash"],
+      "additionalProperties": true,
+      "properties": {
+        "canonical_path": {"type": "string", "description": "Vault-relative path."},
+        "source_url": {"type": ["string", "null"], "format": "uri"},
+        "content_hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "updated_at": {"type": "string", "format": "date"},
+        "title": {"type": "string"}
+      }
+    },
+    "entityProperties": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": true,
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "aliases": {
+          "type": "array",
+          "items": {"type": "string"},
+          "uniqueItems": true,
+          "default": []
+        },
+        "description": {"type": "string"},
+        "mention_count": {"type": "integer", "minimum": 1},
+        "first_seen_doc": {"type": "string"}
+      }
+    },
+    "edge": {
+      "type": "object",
+      "required": ["id", "type", "source", "target", "properties"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^edge_[A-Za-z0-9_]+$"
+        },
+        "type": {
+          "type": "string",
+          "description": "Edge label. Built-ins: MENTIONS, PARENT_OF, RELATED_TO. Domain predicates allowed (UPPER_SNAKE_CASE).",
+          "pattern": "^[A-Z][A-Z0-9_]*$"
+        },
+        "source": {"type": "string", "description": "Source node id."},
+        "target": {"type": "string", "description": "Target node id."},
+        "properties": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+            "provenance_tag": {
+              "type": "string",
+              "enum": ["EXTRACTED", "INFERRED", "AMBIGUOUS"]
+            },
+            "source_doc_ids": {
+              "type": "array",
+              "items": {"type": "string"},
+              "uniqueItems": true
+            },
+            "evidence_spans": {
+              "type": "array",
+              "items": {"type": "string"}
+            },
+            "chunk_offset": {"type": "integer", "minimum": 0},
+            "predicate": {"type": "string"}
+          }
+        }
+      }
+    }
+  }
+}

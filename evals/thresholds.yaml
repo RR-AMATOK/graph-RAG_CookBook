@@ -1,0 +1,27 @@
+# Publish-gate thresholds (SPEC §12.2, DEC-007).
+# Any threshold violated blocks publish. Defaults are conservative starting points;
+# tune per project. Variance handling (min_runs_for_regression) prevents LLM
+# non-determinism from producing false positives — see SPEC §12.6.
+
+extraction:
+  f1_overall_min: 0.80          # absolute floor: extraction F1 must be ≥ 0.80
+  f1_drop_max: 0.03             # F1 drop vs. last published > 3% blocks
+  coverage_min: 0.90            # < 90% of expected golden entities found blocks
+  per_type_f1_drop_max: 0.05    # any single type F1 drop > 5% blocks
+
+retrieval:
+  recall_at_5_min: 0.75         # absolute floor: Recall@5 must be ≥ 0.75
+  recall_at_5_drop_max: 0.05    # Recall@5 drop vs. last published > 5% blocks
+  mrr_min: 0.50                 # absolute floor: MRR ≥ 0.50
+
+cost:
+  per_doc_usd_max: 0.05         # cost creep guard
+
+variance:
+  min_runs_for_regression: 3    # require ≥ this many consecutive runs before declaring regression
+
+# Warmup mode (DEC-011): when the golden set has fewer than this many entries,
+# the harness logs metrics but does NOT block publish. Used during Sprint 1+2
+# while the production-target ≥50 set is being authored.
+warmup:
+  min_golden_entries: 50

@@ -1,0 +1,123 @@
+{
+  "schema_version": "1.0",
+  "metadata": {
+    "generated_at": "2026-04-26T00:00:00Z",
+    "framework_commit": "0000000",
+    "doc_count": 2,
+    "entity_count": 3,
+    "edge_count": 4,
+    "prompt_version": "fixture-v0",
+    "source_manifest_hashes": {
+      "examples/reference-corpus": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  "nodes": [
+    {
+      "id": "doc_pilot_episode",
+      "type": "Document",
+      "properties": {
+        "canonical_path": "examples/reference-corpus/bigbangtheory/episodes/pilot.md",
+        "source_url": "https://en.wikipedia.org/wiki/Pilot_(The_Big_Bang_Theory)",
+        "content_hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "updated_at": "2026-04-26",
+        "title": "Pilot (The Big Bang Theory)"
+      }
+    },
+    {
+      "id": "doc_main_characters",
+      "type": "Document",
+      "properties": {
+        "canonical_path": "examples/reference-corpus/bigbangtheory/characters/main.md",
+        "source_url": null,
+        "content_hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "updated_at": "2026-04-26",
+        "title": "Main Characters"
+      }
+    },
+    {
+      "id": "ent_sheldon_cooper",
+      "type": "Entity",
+      "subtype": "Character",
+      "properties": {
+        "name": "Sheldon Cooper",
+        "aliases": ["Dr. Sheldon Cooper", "Shelly"],
+        "description": "Theoretical physicist at Caltech, roommate of Leonard Hofstadter.",
+        "mention_count": 2,
+        "first_seen_doc": "doc_pilot_episode"
+      }
+    },
+    {
+      "id": "ent_leonard_hofstadter",
+      "type": "Entity",
+      "subtype": "Character",
+      "properties": {
+        "name": "Leonard Hofstadter",
+        "aliases": ["Dr. Leonard Hofstadter"],
+        "description": "Experimental physicist at Caltech, roommate of Sheldon.",
+        "mention_count": 2,
+        "first_seen_doc": "doc_pilot_episode"
+      }
+    },
+    {
+      "id": "ent_caltech",
+      "type": "Entity",
+      "subtype": "Organization",
+      "properties": {
+        "name": "Caltech",
+        "aliases": ["California Institute of Technology"],
+        "description": "Private research university; employer of the main characters.",
+        "mention_count": 2,
+        "first_seen_doc": "doc_pilot_episode"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge_mentions_pilot_sheldon",
+      "type": "MENTIONS",
+      "source": "doc_pilot_episode",
+      "target": "ent_sheldon_cooper",
+      "properties": {
+        "confidence": 0.98,
+        "provenance_tag": "EXTRACTED",
+        "source_doc_ids": ["doc_pilot_episode"],
+        "evidence_spans": ["Sheldon Cooper, a theoretical physicist..."]
+      }
+    },
+    {
+      "id": "edge_mentions_pilot_leonard",
+      "type": "MENTIONS",
+      "source": "doc_pilot_episode",
+      "target": "ent_leonard_hofstadter",
+      "properties": {
+        "confidence": 0.98,
+        "provenance_tag": "EXTRACTED",
+        "source_doc_ids": ["doc_pilot_episode"]
+      }
+    },
+    {
+      "id": "edge_works_at_sheldon_caltech",
+      "type": "WORKS_AT",
+      "source": "ent_sheldon_cooper",
+      "target": "ent_caltech",
+      "properties": {
+        "confidence": 0.95,
+        "provenance_tag": "EXTRACTED",
+        "predicate": "WORKS_AT",
+        "source_doc_ids": ["doc_pilot_episode", "doc_main_characters"]
+      }
+    },
+    {
+      "id": "edge_roommates_sheldon_leonard",
+      "type": "ROOMMATES_WITH",
+      "source": "ent_sheldon_cooper",
+      "target": "ent_leonard_hofstadter",
+      "properties": {
+        "confidence": 0.92,
+        "provenance_tag": "EXTRACTED",
+        "predicate": "ROOMMATES_WITH",
+        "source_doc_ids": ["doc_pilot_episode"]
+      }
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+# Publishing configuration (SPEC §6.4). v1 ships local + GitHub adapters;
+# S3 / SharePoint stubbed for v2+. See DEC-005, DEC-006, DEC-008.
+
+storage_backend: local   # local | github | s3 (v2+) | sharepoint (v2+)
+
+local:
+  output_dir: ./publish/
+
+github:
+  # Dedicated artifacts repo (DEC-005). Set this when configuring GitHub publishing.
+  artifacts_repo: ""             # e.g., owner/graph-rag-artifacts
+  branch: main
+  token_env: GITHUB_ARTIFACTS_TOKEN  # fine-grained PAT scoped to artifacts repo only
+  enable_pages: true             # DEC-006 — serve via Pages URL
+  pages_branch: main
+  commit_author_name: graph-rag-framework
+  commit_author_email: noreply@example.com
+
+retention:
+  # DEC-008: prune tags older than keep_days; always keep the last N regardless of age.
+  keep_days: 30
+  keep_last_n_always: 3
+
+override:
+  allow_force_publish: false     # require explicit --force flag to bypass eval gate
