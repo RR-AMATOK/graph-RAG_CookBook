@@ -12,9 +12,21 @@ vector_db:
   grpc_port: 6334
 
 llm:
+  # Pluggable extractor backend.
+  #   anthropic — direct Anthropic API. Requires ANTHROPIC_API_KEY.
+  #   openai    — OpenAI Chat Completions API. Also routes to:
+  #                 * Ollama: base_url=http://localhost:11434/v1 (local, no key)
+  #                 * OpenRouter: base_url=https://openrouter.ai/api/v1 (multi-provider)
+  #                 * vLLM / LiteLLM / Anyscale: any /v1/chat/completions server
+  backend: anthropic
   extraction_model: claude-sonnet-4-7
   categorization_model: claude-haiku-4-5
   embedding_model: voyage-3-large
+  # OpenAI-backend only: leave null for openai.com; set for Ollama / OpenRouter.
+  base_url: null
+  # Override the default API-key env var. Defaults: ANTHROPIC_API_KEY for
+  # the anthropic backend, OPENAI_API_KEY for the openai backend.
+  api_key_env: null
 
 paths:
   corpus_dir: ./corpus

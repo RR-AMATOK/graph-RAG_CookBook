@@ -35,7 +35,7 @@ This is an unusual hybrid for an "AI engineering" repo — it is the **upstream 
 
 ## Tech Stack
 
-- **LLM Provider:** Anthropic. Claude Sonnet 4.5/4.7 for extraction (FR-3.2). Claude Haiku 4.5 for cheap categorization.
+- **LLM Provider:** Pluggable. Default backend is Anthropic (Claude Sonnet 4.5/4.7) for extraction (FR-3.2). The extractor also supports any OpenAI-compatible endpoint via the `openai` backend — OpenAI itself, Ollama (local), OpenRouter, vLLM, etc. — selected via `--backend openai --base-url ...`. Categorization uses Haiku 4.5 (Anthropic) or a small fast model (OpenAI).
 - **Embedding Model:** Voyage-3 (primary) with `text-embedding-3-large` (OpenAI) as documented fallback.
 - **Vector Store:** Qdrant (standalone). Deterministic chunk IDs (hash of `doc_id + offset + text`).
 - **Graph DB:** FalkorDB (primary, DEC-002). Neo4j Community Edition documented as fallback.

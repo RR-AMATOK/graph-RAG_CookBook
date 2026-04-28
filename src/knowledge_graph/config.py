@@ -39,11 +39,24 @@ class VectorDBSettings(BaseModel):
 
 
 class LLMSettings(BaseModel):
-    """LLM provider settings."""
+    """LLM provider settings.
 
+    The extractor backend is selected by ``backend`` (``anthropic`` |
+    ``openai``). Per-backend fields apply only to the selected backend:
+
+    - ``anthropic``: uses ``ANTHROPIC_API_KEY`` env var (or ``api_key``).
+      ``base_url`` ignored.
+    - ``openai``: uses ``api_key_env`` (default ``OPENAI_API_KEY``) and
+      ``base_url`` (None for OpenAI; ``http://localhost:11434/v1`` for Ollama;
+      ``https://openrouter.ai/api/v1`` for OpenRouter).
+    """
+
+    backend: str = "anthropic"
     extraction_model: str = "claude-sonnet-4-7"
     categorization_model: str = "claude-haiku-4-5"
     embedding_model: str = "voyage-3-large"
+    base_url: str | None = None
+    api_key_env: str | None = None
 
 
 class PathSettings(BaseModel):

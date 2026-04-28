@@ -18,14 +18,17 @@ The single end-to-end goal of Sprint 2 — *ingest the BBT reference corpus into
 |---|---|---|
 | Canonicalizer (FR-2) | `src/knowledge_graph/canonicalizer/{paths,schema,canonicalizer}.py` | 19 |
 | Chunker (FR-3.1) | `src/knowledge_graph/chunker/{tokens,chunker}.py` | 14 |
-| Extractor v0 (FR-3.2..3.5) | `src/knowledge_graph/extractor/{prompts,schemas,cache,dedup,extractor}.py` + `config/extraction_prompts/v0.txt` | 8 |
+| Extractor v0 (FR-3.2..3.5) | `src/knowledge_graph/extractor/{prompts,schemas,cache,dedup,extractor}.py` + `config/extraction_prompts/v0.txt` | 12 |
+| **LLM backends (pluggable)** | `src/knowledge_graph/extractor/backends/{base,anthropic,openai_compat,mock}.py` | 16 |
 | Graph builder (FR-4) | `src/knowledge_graph/graph/{ids,client,schema,builder}.py` | 4 |
 | Hallucination metrics (TODO-110.a + .c) | `evals/harness/hallucination.py` | 8 |
 | Pipeline orchestrator | `src/knowledge_graph/pipeline.py` | (covered by component tests) |
 | `kg ingest` CLI | `src/knowledge_graph/cli.py` | (smoke via `kg --help`) |
 | Sprint 1 carry-over (smoke + harness) | `tests/test_smoke.py`, `evals/harness/test_{gates,metrics}.py` | 36 |
 
-**Total: 89 tests passing on Python 3.13. Mypy strict clean. Ruff clean. CLI bootable.**
+**Total: 105 tests passing on Python 3.13. Mypy strict clean. Ruff clean. CLI bootable.**
+
+The pluggable LLM backend lets the extractor target Anthropic (default), any OpenAI-compatible endpoint (OpenAI itself, Ollama for local, OpenRouter for multi-provider routing, vLLM, LiteLLM), or a test mock. See [`docs/llm-backends.md`](../docs/llm-backends.md) for the full guide. The same prompt v0 + tool definition + Pydantic validation work across all backends.
 
 ## Verification (this session)
 
@@ -58,17 +61,34 @@ The single end-to-end goal of Sprint 2 — *ingest the BBT reference corpus into
    pip install -e ".[fetch]"
    python scripts/fetch_reference_corpus.py
    ```
-2. **User action:** end-to-end run
+2. **User action:** end-to-end run — pick a backend per the [LLM-backends guide](../docs/llm-backends.md):
+
    ```bash
-   export ANTHROPIC_API_KEY=...
    make up   # if not still running
+
+   # Anthropic (default — best quality):
+   export ANTHROPIC_API_KEY=sk-ant-...
    kg ingest --reference
+
+   # OpenAI:
+   export OPENAI_API_KEY=sk-...
+   kg ingest --reference --backend openai --model gpt-4o
+
+   # Ollama (local, free, requires a tool-capable model):
+   ollama pull qwen2.5-coder:32b
+   kg ingest --reference --backend openai --model qwen2.5-coder:32b \
+             --base-url http://localhost:11434/v1
+
+   # OpenRouter (multi-provider; works with Claude models):
+   export OPENAI_API_KEY=sk-or-v1-...
+   kg ingest --reference --backend openai --model anthropic/claude-sonnet-4-7 \
+             --base-url https://openrouter.ai/api/v1
    ```
+
    Expected: ~13 docs canonicalized, ~30–60 chunks extracted, entities + edges in FalkorDB, run report at `runs/<timestamp>/report.json`.
 3. Inspect the run report; confirm `evidence_grounding_rate` ≥ 0.85 and `predicate_type_ok_rate` ≥ 0.95 (rough sanity).
 4. Optional: hand-author 10–20 BBT golden entries (TODO-008/108) for harness warmup-mode → calibration.
-5. Push branch + open PR `sprint-2/extraction-pipeline → main`.
-6. Merge after CI green.
+5. Sprint 2 PR `sprint-2/extraction-pipeline → main` is already open (PR #2). Merge after CI green.
 
 ## Notes
 

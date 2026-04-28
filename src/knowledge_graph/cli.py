@@ -25,6 +25,7 @@ from pathlib import Path
 import typer
 
 from knowledge_graph import __version__
+from knowledge_graph.extractor import ExtractorSettings
 from knowledge_graph.pipeline import IngestSettings, ingest_corpus
 
 app = typer.Typer(
@@ -57,6 +58,31 @@ _OPT_REFERENCE = typer.Option(
     ),
 )
 _OPT_LOG_LEVEL = typer.Option("INFO", help="Logging level (DEBUG, INFO, WARNING, ERROR).")
+_OPT_BACKEND = typer.Option(
+    "anthropic",
+    "--backend",
+    help=(
+        "LLM backend. 'anthropic' (default) uses ANTHROPIC_API_KEY. "
+        "'openai' uses OPENAI_API_KEY against api.openai.com, OR an Ollama "
+        "server at --base-url http://localhost:11434/v1, OR OpenRouter at "
+        "--base-url https://openrouter.ai/api/v1."
+    ),
+)
+_OPT_MODEL = typer.Option(
+    None,
+    "--model",
+    help="Override the default model. Defaults: claude-sonnet-4-7 (anthropic), gpt-4o (openai).",
+)
+_OPT_BASE_URL = typer.Option(
+    None,
+    "--base-url",
+    help="Override the OpenAI-compatible base URL (only used by --backend openai).",
+)
+_OPT_API_KEY_ENV = typer.Option(
+    None,
+    "--api-key-env",
+    help="Override the env var name for the API key. Defaults: ANTHROPIC_API_KEY / OPENAI_API_KEY.",
+)
 
 
 @app.command()
@@ -76,6 +102,12 @@ def info() -> None:
     typer.echo("  see SPEC.md for the roadmap; CLAUDE.md for project rules.")
 
 
+_DEFAULT_MODEL_PER_BACKEND = {
+    "anthropic": "claude-sonnet-4-7",
+    "openai": "gpt-4o",
+}
+
+
 @app.command()
 def ingest(
     flat_dir: Path | None = _OPT_FLAT_DIR,
@@ -87,11 +119,17 @@ def ingest(
     cache_dir: Path = _OPT_CACHE_DIR,
     reference: bool = _OPT_REFERENCE,
     log_level: str = _OPT_LOG_LEVEL,
+    backend: str = _OPT_BACKEND,
+    model: str | None = _OPT_MODEL,
+    base_url: str | None = _OPT_BASE_URL,
+    api_key_env: str | None = _OPT_API_KEY_ENV,
 ) -> None:
     """Run the canonicalize → chunk → extract → graph pipeline on a markdown corpus.
 
-    Requires a running FalkorDB (``make up``) and ``ANTHROPIC_API_KEY``
-    exported in the environment.
+    Requires a running FalkorDB (``make up``) and an API key for the chosen
+    backend (``ANTHROPIC_API_KEY`` for ``--backend anthropic``,
+    ``OPENAI_API_KEY`` for ``--backend openai``, or no key needed for a local
+    Ollama server at ``--base-url http://localhost:11434/v1``).
     """
     logging.basicConfig(
         level=getattr(logging, log_level.upper(), logging.INFO),
@@ -110,6 +148,14 @@ def ingest(
         )
         raise typer.Exit(code=2)
 
+    chosen_model = model or _DEFAULT_MODEL_PER_BACKEND.get(backend, "claude-sonnet-4-7")
+    extractor_settings = ExtractorSettings(
+        backend=backend,
+        model=chosen_model,
+        cache_root=cache_dir,
+        base_url=base_url,
+        api_key_env=api_key_env,
+    )
     settings = IngestSettings(
         flat_dir=flat_dir,
         nested_dir=nested_dir,
@@ -118,7 +164,9 @@ def ingest(
         corpus_out=corpus_out,
         runs_dir=runs_dir,
         cache_dir=cache_dir,
+        extractor=extractor_settings,
     )
+    typer.echo(f"[ingest] backend={backend} model={chosen_model}", err=True)
     report = ingest_corpus(settings=settings)
 
     typer.echo("")
