@@ -92,6 +92,36 @@ Each stage caches by content hash (SPEC §6.3): `rm -rf cache/` is always safe a
 | `src/knowledge_graph/cli.py`                        | `kg` CLI entry point                                      |
 | `src/knowledge_graph/config.py`                     | Pydantic-settings + YAML config                           |
 
+## Sprint 2 — extraction pipeline (current)
+
+The Sprint 2 deliverable wires together the first 4 stages end-to-end:
+
+```
+canonicalizer ──▶ chunker ──▶ extractor ──▶ graph builder
+   │                │             │              │
+   │                │             ▼              │
+   │                │       hallucination        │
+   │                │       metrics              │
+   │                │     (110.a + 110.c)        │
+   │                │                            │
+   ▼                ▼                            ▼
+corpus/         (in-memory)                  FalkorDB
+                                             (Documents,
+                                              Entities,
+                                              MENTIONS,
+                                              RELATES)
+```
+
+Key behaviors:
+
+- **Canonicalizer**: reads `flat/` (`__`-delimited filenames) and/or `nested/` (folder-based) source dirs, normalizes frontmatter to a strict Pydantic schema (`CanonicalFrontmatter`), and writes one `.md` per doc to `corpus/`. Stable `doc_id = "doc_" + sha256(canonical_path)[:16]`.
+- **Chunker**: header-aware splitting on H2/H3, 1500-token soft cap (offline char-rate estimator), 200-token paragraph-aligned overlap. Stable `chunk_id = "chk_" + sha256(doc_id + offset + text)[:16]`.
+- **Extractor v0**: Anthropic SDK + Claude Sonnet 4.7 + tool-use forced output + ephemeral system-prompt caching. See [`docs/extraction-prompt.md`](extraction-prompt.md). Per-chunk filesystem cache keyed by `hash(prompt_version + chunk_text)`.
+- **Graph builder**: FalkorDB MERGE-based ingest. Stable `entity_id = "ent_" + sha256(normalized_name + type)[:16]` so cross-document entity resolution falls out for free. Per-edge evidence accumulates across documents.
+- **Hallucination metrics**: per-extraction `evidence_grounding_rate` (entity names + aliases must appear in the cited evidence span) and `predicate_type_ok_rate` (small canonical predicate→types map; unknown predicates pass). Run-level rates land in `runs/<id>/report.json`.
+
+The pipeline runs single-pass: re-ingest delete/recreate (FR-4.7) and incremental updates (FR-7) are Sprint 3 work.
+
 ## The publish gate
 
 Every pipeline run executes the eval harness *after* graph merge and *before* publish (SPEC §12.3). If any threshold in `evals/thresholds.yaml` is violated:
