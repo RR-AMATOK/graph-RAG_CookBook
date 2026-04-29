@@ -49,8 +49,16 @@ class ExtractorSettings:
     """Settings for the extractor and the underlying backend.
 
     Backend selection is by ``backend`` name. Per-backend fields
-    (``base_url``, ``api_key``, ``api_key_env``) are only used by some
-    backends — leave at their defaults when not relevant.
+    (``base_url``, ``api_key``, ``api_key_env``, ``num_ctx``) are only used
+    by some backends — leave at their defaults when not relevant.
+
+    ``num_ctx`` is an Ollama-specific knob that bumps the model context
+    window. Ollama's default (4096) is too small for our system prompt +
+    tool schema + a 1500-token chunk together, so larger chunks get the
+    tool definition truncated and the model returns plain text. Set to
+    8192+ when targeting Ollama. Ignored by OpenAI proper (passing it
+    would cause a 400) — the OpenAI backend only forwards it when a
+    non-default ``base_url`` is set.
     """
 
     backend: str = "anthropic"
@@ -61,6 +69,7 @@ class ExtractorSettings:
     api_key: str | None = None
     api_key_env: str | None = None
     base_url: str | None = None
+    num_ctx: int | None = None
     max_retries: int = 4
 
 

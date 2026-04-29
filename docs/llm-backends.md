@@ -47,15 +47,20 @@ kg ingest --reference --backend openai --model gpt-4o
 ```bash
 # In a separate shell:
 ollama serve
-ollama pull qwen2.5-coder:32b      # or llama3.1:70b — make sure your model supports tools
+ollama pull qwen2.5-coder:32b      # or qwen3:30b, llama3.1:70b — must support tool calling
 
 kg ingest --reference \
   --backend openai \
   --model qwen2.5-coder:32b \
-  --base-url http://localhost:11434/v1
+  --base-url http://localhost:11434/v1 \
+  --num-ctx 8192
 ```
 
 The `OPENAI_API_KEY` is required by the SDK but ignored by Ollama — the extractor sends a placeholder. No real key needed.
+
+**`--num-ctx 8192` is required.** Ollama's default `num_ctx` is 4096, which is too small for our system prompt (~1k tokens) + tool schema (~400 tokens) + a 1500-token chunk + Ollama's chat-template overhead. When the input gets truncated, the model loses sight of the tool definition and returns plain text instead of a tool call — the extractor then exhausts retries with `model did not call tool`. 8192 is a safe floor; 16384 gives extra headroom if you raise the chunker's soft cap. The flag is only forwarded to non-default `--base-url` endpoints, so it's safe to keep set even when switching to OpenAI proper.
+
+If you keep hitting `did not call tool` errors despite a generous `--num-ctx`, the model itself probably has weak tool-calling — try a different model (Qwen3 / Qwen2.5 series and Llama 3.1 70B+ are the most reliable picks at the time of writing).
 
 ### OpenRouter (any model on the internet)
 

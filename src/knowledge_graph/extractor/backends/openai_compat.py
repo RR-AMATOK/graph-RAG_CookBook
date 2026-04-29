@@ -80,17 +80,26 @@ class OpenAIBackend(LLMBackend):
     ) -> BackendResponse:
         client = self._get_client()
         oai_tool = _translate_tool(tool)
+        kwargs: dict[str, Any] = {
+            "model": getattr(self.settings, "model", "gpt-4o"),
+            "max_tokens": max_tokens,
+            "tools": [oai_tool],
+            "tool_choice": {"type": "function", "function": {"name": tool["name"]}},
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message},
+            ],
+        }
+        # Ollama-specific: forward num_ctx through extra_body when set AND
+        # we're targeting a non-default endpoint (Ollama / vLLM accept
+        # `options.num_ctx`; OpenAI proper would reject the unknown field).
+        num_ctx = getattr(self.settings, "num_ctx", None)
+        base_url = getattr(self.settings, "base_url", None)
+        if num_ctx and base_url:
+            kwargs["extra_body"] = {"options": {"num_ctx": int(num_ctx)}}
+
         try:
-            response = client.chat.completions.create(
-                model=getattr(self.settings, "model", "gpt-4o"),
-                max_tokens=max_tokens,
-                tools=[oai_tool],
-                tool_choice={"type": "function", "function": {"name": tool["name"]}},
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_message},
-                ],
-            )
+            response = client.chat.completions.create(**kwargs)
         except Exception as exc:
             raise BackendError(f"openai-compat call failed: {exc}") from exc
 

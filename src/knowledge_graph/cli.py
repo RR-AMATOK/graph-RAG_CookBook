@@ -83,6 +83,17 @@ _OPT_API_KEY_ENV = typer.Option(
     "--api-key-env",
     help="Override the env var name for the API key. Defaults: ANTHROPIC_API_KEY / OPENAI_API_KEY.",
 )
+_OPT_NUM_CTX = typer.Option(
+    None,
+    "--num-ctx",
+    help=(
+        "Ollama context-window override (forwarded as `options.num_ctx` "
+        "via extra_body). Ollama's default 4096 is too small for our "
+        "system prompt + tool schema + 1500-token chunk; use 8192+ for "
+        "reliable tool calls. Only takes effect with --backend openai and "
+        "a custom --base-url. Ignored by OpenAI proper."
+    ),
+)
 
 
 @app.command()
@@ -123,6 +134,7 @@ def ingest(
     model: str | None = _OPT_MODEL,
     base_url: str | None = _OPT_BASE_URL,
     api_key_env: str | None = _OPT_API_KEY_ENV,
+    num_ctx: int | None = _OPT_NUM_CTX,
 ) -> None:
     """Run the canonicalize → chunk → extract → graph pipeline on a markdown corpus.
 
@@ -155,6 +167,7 @@ def ingest(
         cache_root=cache_dir,
         base_url=base_url,
         api_key_env=api_key_env,
+        num_ctx=num_ctx,
     )
     settings = IngestSettings(
         flat_dir=flat_dir,
