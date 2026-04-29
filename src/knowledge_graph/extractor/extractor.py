@@ -166,10 +166,30 @@ class Extractor:
                     f"chunk {chunk.chunk_id}: extraction failed validation: {exc}"
                 ) from exc
 
-            extraction = Extraction(
-                entities=dedupe_within_doc(extraction.entities),
-                relationships=extraction.relationships,
-            )
+            # Dedup may merge near-duplicate entity names within the same
+            # type (e.g., "Season 5" + "Season 5 finale" at threshold 90).
+            # Rewrite relationship endpoints through the rename map so the
+            # post-dedup Extraction stays self-consistent — without this,
+            # relationships pointing at merged-away surface forms fail the
+            # endpoints-resolve validator.
+            deduped_entities, rename_map = dedupe_within_doc(extraction.entities)
+            remapped_relationships = [
+                rel.model_copy(
+                    update={
+                        "source": rename_map.get(rel.source, rel.source),
+                        "target": rename_map.get(rel.target, rel.target),
+                    }
+                )
+                for rel in extraction.relationships
+            ]
+            try:
+                extraction = Extraction(
+                    entities=deduped_entities, relationships=remapped_relationships
+                )
+            except ValidationError as exc:
+                raise _RetriableExtractorError(
+                    f"chunk {chunk.chunk_id}: post-dedup validation failed: {exc}"
+                ) from exc
             usage = CallUsage(
                 input_tokens=response.input_tokens,
                 output_tokens=response.output_tokens,

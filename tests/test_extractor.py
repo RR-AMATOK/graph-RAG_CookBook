@@ -145,20 +145,51 @@ class TestDedup:
     def test_merges_fuzzy_matches_within_type(self) -> None:
         a = ExtractedEntity(name="Sheldon Cooper", type="Character")
         b = ExtractedEntity(name="Dr. Sheldon Cooper", type="Character", aliases=["Shelly"])
-        out = dedupe_within_doc([a, b])
+        out, rename_map = dedupe_within_doc([a, b])
         assert len(out) == 1
         assert out[0].name == "Sheldon Cooper"
         assert "Shelly" in out[0].aliases
         assert "Dr. Sheldon Cooper" in out[0].aliases
+        # Both surface forms map to the canonical first-seen name.
+        assert rename_map["Sheldon Cooper"] == "Sheldon Cooper"
+        assert rename_map["Dr. Sheldon Cooper"] == "Sheldon Cooper"
 
     def test_keeps_distinct_types_separate(self) -> None:
         a = ExtractedEntity(name="Mercury", type="Concept")
         b = ExtractedEntity(name="Mercury", type="Location")
-        out = dedupe_within_doc([a, b])
+        out, rename_map = dedupe_within_doc([a, b])
         assert len(out) == 2
+        assert rename_map == {"Mercury": "Mercury"}  # both are identity (only one key wins)
 
     def test_empty(self) -> None:
-        assert dedupe_within_doc([]) == []
+        assert dedupe_within_doc([]) == ([], {})
+
+    def test_rename_map_preserves_relationship_validity(self) -> None:
+        """Relationships referencing merged surface forms must remap cleanly."""
+        from knowledge_graph.extractor.schemas import ExtractedRelationship, Extraction
+
+        a = ExtractedEntity(name="Season 5", type="Event")
+        b = ExtractedEntity(name="Season 5 finale", type="Event")
+        rel = ExtractedRelationship(
+            source="Season 5 finale",
+            target="Season 5",
+            predicate="PART_OF",
+            evidence_span="The Season 5 finale wraps Season 5.",
+            confidence=0.9,
+            provenance_tag="EXTRACTED",
+        )
+        deduped, rename_map = dedupe_within_doc([a, b])
+        remapped = rel.model_copy(
+            update={
+                "source": rename_map.get(rel.source, rel.source),
+                "target": rename_map.get(rel.target, rel.target),
+            }
+        )
+        # Both endpoints now resolve to the surviving entity ("Season 5").
+        assert remapped.source == "Season 5"
+        assert remapped.target == "Season 5"
+        # Self-loop after dedup is fine — Extraction validation passes.
+        Extraction(entities=deduped, relationships=[remapped])
 
 
 class TestBackendFactory:
