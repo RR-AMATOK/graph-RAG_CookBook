@@ -12,7 +12,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-PROMPT_VERSION = "v0"
+PROMPT_VERSION = "v1"
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _PROMPT_DIR = _REPO_ROOT / "config" / "extraction_prompts"

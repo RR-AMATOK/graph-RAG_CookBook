@@ -17,6 +17,7 @@ from knowledge_graph.extractor.backends.mock import MockBackend
 from knowledge_graph.extractor.cache import ExtractionCache, cache_key
 from knowledge_graph.extractor.dedup import dedupe_within_doc
 from knowledge_graph.extractor.extractor import ExtractorError
+from knowledge_graph.extractor.prompts import PROMPT_VERSION
 from knowledge_graph.extractor.schemas import (
     ExtractedEntity,
     record_extractions_tool,
@@ -83,15 +84,15 @@ class TestExtractor:
         assert len(result.extraction.entities) == 2
         assert len(result.extraction.relationships) == 1
         assert result.usage.input_tokens == 10
-        assert result.prompt_version == "v0"
+        assert result.prompt_version == PROMPT_VERSION
         assert mock.calls == 1
 
     def test_cache_hit_skips_backend(self, tmp_path: Path) -> None:
         cache_dir = tmp_path / "cache"
         cache = ExtractionCache(cache_root=cache_dir)
         chunk = _make_chunk()
-        key = cache_key("v0", chunk.text)
-        cache.put(key, {"extraction": _SAMPLE_PAYLOAD, "prompt_version": "v0"})
+        key = cache_key(PROMPT_VERSION, chunk.text)
+        cache.put(key, {"extraction": _SAMPLE_PAYLOAD, "prompt_version": PROMPT_VERSION})
 
         sentinel = {
             "entities": [{"name": "WRONG", "type": "Concept"}],

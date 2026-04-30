@@ -1,12 +1,35 @@
-# Extraction Prompt v0
+# Extraction Prompt (v1 current; v0 retained for A/B)
 
-The extractor lives in `src/knowledge_graph/extractor/`. Sprint 2 ships **prompt v0**, the first production-target prompt. This document captures what it does, why it's shaped the way it is, and the change-control rules.
+The extractor lives in `src/knowledge_graph/extractor/`. Sprint 2 shipped **prompt v0**, the first production-target prompt; Sprint 2.6 ships **prompt v1**, a tightened revision targeting four specific failure modes observed during the Qwen3-30B-A3B local pilot. Both files coexist (`config/extraction_prompts/v0.txt` and `v1.txt`); `PROMPT_VERSION = "v1"` makes v1 the default. v0 stays loadable via `load_system_prompt("v0")` for A/B comparison runs.
 
-## Pointer
+This document captures what each prompt does, why it's shaped the way it is, and the change-control rules.
+
+## v1 changes (Sprint 2.6)
+
+Four targeted edits, all addressing structural model-behavior bugs observed in the v0 pilot — **not** corpus-tuning. Each lever is one we can reason about without a golden set; thresholds and per-corpus phrasing are deliberately left for a later v2 once goldens exist.
+
+1. **PORTRAYS direction lock with worked example.** v0 listed PORTRAYS as a generic predicate. Qwen3 systematically inverted it (`Character → Person` and `Character → Work` violations). v1 adds an explicit "Edge direction (STRICT)" section with PORTRAYS, AUTHORED, FOUNDED_BY, WORKS_AT pinned by direction, plus a worked negative example using a domain-neutral acting scene. Includes the heuristic "write the predicate as a sentence; if it reads as nonsense in English, you have the direction wrong."
+
+2. **Chunk-membership constraint for relationship endpoints.** v0 said "do not invent entities not mentioned in the chunk" but allowed relationships whose endpoints were emitted from outside-knowledge. v1 adds an explicit hard constraint: *"Do not emit a relationship if either endpoint's name (or alias) is absent from the chunk."* Plus a worked negative example showing the temptation (a CEO mentioned generically) and the correct behavior (omit).
+
+3. **Verbatim-citation tightening.** v0 required `evidence_span` to be a verbatim substring; v1 adds *"the evidence_span MUST contain at least one surface form of BOTH endpoints (or one name + an unambiguous pronoun for the other, with the referent established in the immediately preceding text)."* This directly attacks the v0 pilot's `span_grounding=0.45` (the model was citing supporting-but-name-free spans) without breaking the chunk-grounding semantics.
+
+4. **Soft predicate vocabulary lock.** v0 left predicates open-ended; the pilot saw escape-hatch synonyms (`PORTRAYS_CHARACTER_IN`, `HAS_RELATIONSHIP_WITH`, `IS_A_TYPE_OF`). v1 ships a 13-row preferred-predicate table with subject/object types, plus the rule *"only invent a new predicate if none of the above genuinely fit. Do not invent escape-hatch synonyms."* Unknown predicates are still allowed (we want recall on novel domains), but the soft-list reduces vocabulary drift.
+
+What v1 deliberately does NOT change: type vocabulary, provenance-tag rules, conservative extraction stance, domain-specific phrasing (none added; worked examples use domain-neutral scenes). The discipline: every v1 change must read as a stricter restatement of v0's intent.
+
+Expected qualitative impact (no golden set yet — empirical comparison comes when full-corpus runs of both prompts are scored against goldens):
+- `span_grounding` should rise from 0.45 toward ~0.80+ (model forced to cite name-containing spans).
+- `predicate_type_ok_rate` should rise from 0.955 toward ~0.99 (direction errors and escape-hatch predicates drop).
+- `chunk_grounding_rate` should hold at ~0.97.
+- Total relationships per chunk may drop slightly (recall trade-off from the chunk-membership constraint).
+
+## Pointer (current = v1)
 
 | Item | Where |
 |---|---|
-| Prompt body | `config/extraction_prompts/v0.txt` |
+| Prompt body (current) | `config/extraction_prompts/v1.txt` |
+| Prompt body (v0, retained for A/B) | `config/extraction_prompts/v0.txt` |
 | Loader + version constant | `src/knowledge_graph/extractor/prompts.py` (`PROMPT_VERSION`, `load_system_prompt`) |
 | Tool definition | `src/knowledge_graph/extractor/schemas.py` (`record_extractions_tool()`) |
 | Output validation | `src/knowledge_graph/extractor/schemas.py` (`Extraction` Pydantic model) |
