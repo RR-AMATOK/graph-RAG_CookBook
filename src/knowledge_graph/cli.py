@@ -199,7 +199,8 @@ def ingest(
         f"cache_read={report.cost_cache_read_tokens}; cost=${report.cost_usd:.4f}"
     )
     typer.echo(
-        f"  hallucination: grounding={report.evidence_grounding_rate:.3f} "
+        f"  hallucination: chunk_grounding={report.chunk_grounding_rate:.3f} "
+        f"span_grounding={report.evidence_grounding_rate:.3f} "
         f"predicate_types_ok={report.predicate_type_ok_rate:.3f} "
         f"flagged={report.flagged_count}/{report.n_relationships_scored}"
     )

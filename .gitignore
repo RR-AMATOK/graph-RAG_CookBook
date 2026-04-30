@@ -66,6 +66,12 @@ coverage.xml
 /runs/
 /.cache/
 
+# Fetched reference corpus — README documents these as fetch-on-demand
+# outputs of scripts/fetch_reference_corpus.py, not checked-in artifacts.
+/examples/reference-corpus/flat/
+/examples/reference-corpus/nested/
+/examples/reference-corpus/manifest.yaml
+
 # Eval runs (history.jsonl IS tracked; runs/ output dirs are not)
 /evals/runs/
 

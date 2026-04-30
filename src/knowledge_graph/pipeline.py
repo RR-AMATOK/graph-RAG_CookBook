@@ -70,7 +70,8 @@ class IngestReport:
     cost_output_tokens: int
     cost_cache_read_tokens: int
     cost_usd: float
-    evidence_grounding_rate: float
+    evidence_grounding_rate: float  # strict: name in cited span
+    chunk_grounding_rate: float  # lenient: name anywhere in chunk (publish-gate signal)
     predicate_type_ok_rate: float
     n_relationships_scored: int
     flagged_count: int
@@ -167,7 +168,10 @@ def ingest_corpus(
             builder.write_extraction(
                 doc_fm=doc.frontmatter_obj, chunk=chunk, extraction=result.extraction
             )
-            hallucination_reports.append(score_extraction(result.extraction))
+            # Pass chunk.text so the scorer computes the lenient chunk-grounding
+            # metric (the actual hallucination floor) alongside the strict
+            # span-grounding writing-style metric.
+            hallucination_reports.append(score_extraction(result.extraction, chunk_text=chunk.text))
 
     finished = datetime.now(UTC)
     halluc = aggregate_hallucination(hallucination_reports)
@@ -190,6 +194,7 @@ def ingest_corpus(
         cost_cache_read_tokens=cost_cache_read_tokens,
         cost_usd=round(total_cost_usd, 6),
         evidence_grounding_rate=halluc.evidence_grounding_rate,
+        chunk_grounding_rate=halluc.chunk_grounding_rate,
         predicate_type_ok_rate=halluc.predicate_type_ok_rate,
         n_relationships_scored=halluc.n_relationships,
         flagged_count=len(halluc.flagged),
