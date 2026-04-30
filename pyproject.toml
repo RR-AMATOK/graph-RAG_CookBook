@@ -24,7 +24,8 @@ dependencies = [
     "typer>=0.12",
     "jsonschema>=4.22",
     # Sprint 2 — extraction pipeline
-    "anthropic>=0.40",          # extractor: Claude Sonnet 4.7, prompt caching, tool use
+    "anthropic>=0.40",          # extractor backend: Claude Sonnet 4.7 + prompt caching
+    "openai>=1.50",             # extractor backend: OpenAI / Ollama / OpenRouter / vLLM
     "mistune>=3.0",             # chunker: header-aware markdown AST
     "python-frontmatter>=1.1",  # canonicalizer: roundtrip-clean frontmatter
     "rapidfuzz>=3.9",           # entity dedup (normalized-name fuzzy match within type)

@@ -1,8 +1,7 @@
-"""Extractor unit tests with a fake Anthropic client."""
+"""Extractor unit tests using the MockBackend."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +12,8 @@ from knowledge_graph.extractor import (
     Extractor,
     ExtractorSettings,
 )
+from knowledge_graph.extractor.backends import make_backend
+from knowledge_graph.extractor.backends.mock import MockBackend
 from knowledge_graph.extractor.cache import ExtractionCache, cache_key
 from knowledge_graph.extractor.dedup import dedupe_within_doc
 from knowledge_graph.extractor.extractor import ExtractorError
@@ -20,60 +21,6 @@ from knowledge_graph.extractor.schemas import (
     ExtractedEntity,
     record_extractions_tool,
 )
-
-# ─────────────────────────────────────────────────────────────────────
-# Fake Anthropic client for tests
-# ─────────────────────────────────────────────────────────────────────
-
-
-@dataclass
-class _FakeUsage:
-    input_tokens: int = 100
-    output_tokens: int = 50
-    cache_read_input_tokens: int = 0
-    cache_creation_input_tokens: int = 0
-
-
-@dataclass
-class _FakeContentBlock:
-    type: str
-    name: str | None = None
-    input: dict[str, Any] | None = None
-
-
-@dataclass
-class _FakeResponse:
-    content: list[_FakeContentBlock]
-    usage: _FakeUsage
-
-
-class _FakeMessages:
-    def __init__(self, response_payload: dict[str, Any]) -> None:
-        self.response_payload = response_payload
-        self.calls = 0
-
-    def create(self, **kwargs: Any) -> _FakeResponse:
-        self.calls += 1
-        return _FakeResponse(
-            content=[
-                _FakeContentBlock(
-                    type="tool_use",
-                    name="record_extractions",
-                    input=self.response_payload,
-                )
-            ],
-            usage=_FakeUsage(),
-        )
-
-
-class _FakeClient:
-    def __init__(self, payload: dict[str, Any]) -> None:
-        self.messages = _FakeMessages(payload)
-
-
-# ─────────────────────────────────────────────────────────────────────
-# Helpers
-# ─────────────────────────────────────────────────────────────────────
 
 
 def _make_chunk(text: str = "Sample chunk content.") -> Chunk:
@@ -106,9 +53,15 @@ _SAMPLE_PAYLOAD: dict[str, Any] = {
 }
 
 
-# ─────────────────────────────────────────────────────────────────────
-# Tests
-# ─────────────────────────────────────────────────────────────────────
+def _extractor_with_mock(
+    payload: dict[str, Any], **settings_kwargs: Any
+) -> tuple[Extractor, MockBackend]:
+    settings = ExtractorSettings(api_key="test", **settings_kwargs)
+    extractor = Extractor(settings)
+    mock = MockBackend()
+    mock.set_response(payload)
+    extractor.inject_backend(mock)
+    return extractor, mock
 
 
 class TestRecordExtractionsTool:
@@ -123,56 +76,50 @@ class TestRecordExtractionsTool:
 
 
 class TestExtractor:
-    def test_extract_calls_api_and_parses(self) -> None:
-        extractor = Extractor(ExtractorSettings(api_key="test"))
-        extractor.inject_client(_FakeClient(_SAMPLE_PAYLOAD))  # type: ignore[arg-type]
+    def test_extract_calls_backend_and_parses(self) -> None:
+        extractor, mock = _extractor_with_mock(_SAMPLE_PAYLOAD)
         result = extractor.extract(_make_chunk())
         assert result.cached is False
         assert len(result.extraction.entities) == 2
         assert len(result.extraction.relationships) == 1
-        assert result.usage.input_tokens == 100
+        assert result.usage.input_tokens == 10
         assert result.prompt_version == "v0"
+        assert mock.calls == 1
 
-    def test_cache_hit_skips_api(self, tmp_path: Path) -> None:
+    def test_cache_hit_skips_backend(self, tmp_path: Path) -> None:
         cache_dir = tmp_path / "cache"
-        # Pre-populate cache
         cache = ExtractionCache(cache_root=cache_dir)
         chunk = _make_chunk()
         key = cache_key("v0", chunk.text)
         cache.put(key, {"extraction": _SAMPLE_PAYLOAD, "prompt_version": "v0"})
 
-        # Build extractor with a fake client that, if called, would return
-        # something obviously different so a cache miss would be visible.
         sentinel = {
             "entities": [{"name": "WRONG", "type": "Concept"}],
             "relationships": [],
         }
-        extractor = Extractor(ExtractorSettings(api_key="test", cache_root=cache_dir))
-        fake_client = _FakeClient(sentinel)
-        extractor.inject_client(fake_client)  # type: ignore[arg-type]
-
+        extractor, mock = _extractor_with_mock(sentinel, cache_root=cache_dir)
         result = extractor.extract(chunk)
         assert result.cached is True
         assert result.extraction.entities[0].name == "Sheldon Cooper"
-        assert fake_client.messages.calls == 0
+        assert mock.calls == 0
 
     def test_cache_miss_then_populates(self, tmp_path: Path) -> None:
         cache_dir = tmp_path / "cache"
-        extractor = Extractor(ExtractorSettings(api_key="test", cache_root=cache_dir))
-        extractor.inject_client(_FakeClient(_SAMPLE_PAYLOAD))  # type: ignore[arg-type]
+        extractor, _ = _extractor_with_mock(_SAMPLE_PAYLOAD, cache_root=cache_dir)
         chunk = _make_chunk("First call content.")
 
         first = extractor.extract(chunk)
         assert first.cached is False
 
-        # Second call should now hit the cache.
-        sentinel_client = _FakeClient(
+        # Swap to a sentinel backend; cache should serve next call.
+        sentinel_mock = MockBackend()
+        sentinel_mock.set_response(
             {"entities": [{"name": "X", "type": "Concept"}], "relationships": []}
         )
-        extractor.inject_client(sentinel_client)  # type: ignore[arg-type]
+        extractor.inject_backend(sentinel_mock)
         second = extractor.extract(chunk)
         assert second.cached is True
-        assert sentinel_client.messages.calls == 0
+        assert sentinel_mock.calls == 0
         assert second.extraction.entities[0].name == "Sheldon Cooper"
 
     def test_orphan_relationship_raises(self) -> None:
@@ -189,8 +136,7 @@ class TestExtractor:
                 }
             ],
         }
-        extractor = Extractor(ExtractorSettings(api_key="test", max_retries=1))
-        extractor.inject_client(_FakeClient(bad_payload))  # type: ignore[arg-type]
+        extractor, _ = _extractor_with_mock(bad_payload, max_retries=1)
         with pytest.raises(ExtractorError):
             extractor.extract(_make_chunk())
 
@@ -199,17 +145,68 @@ class TestDedup:
     def test_merges_fuzzy_matches_within_type(self) -> None:
         a = ExtractedEntity(name="Sheldon Cooper", type="Character")
         b = ExtractedEntity(name="Dr. Sheldon Cooper", type="Character", aliases=["Shelly"])
-        out = dedupe_within_doc([a, b])
+        out, rename_map = dedupe_within_doc([a, b])
         assert len(out) == 1
         assert out[0].name == "Sheldon Cooper"
         assert "Shelly" in out[0].aliases
         assert "Dr. Sheldon Cooper" in out[0].aliases
+        # Both surface forms map to the canonical first-seen name.
+        assert rename_map["Sheldon Cooper"] == "Sheldon Cooper"
+        assert rename_map["Dr. Sheldon Cooper"] == "Sheldon Cooper"
 
     def test_keeps_distinct_types_separate(self) -> None:
         a = ExtractedEntity(name="Mercury", type="Concept")
         b = ExtractedEntity(name="Mercury", type="Location")
-        out = dedupe_within_doc([a, b])
+        out, rename_map = dedupe_within_doc([a, b])
         assert len(out) == 2
+        assert rename_map == {"Mercury": "Mercury"}  # both are identity (only one key wins)
 
     def test_empty(self) -> None:
-        assert dedupe_within_doc([]) == []
+        assert dedupe_within_doc([]) == ([], {})
+
+    def test_rename_map_preserves_relationship_validity(self) -> None:
+        """Relationships referencing merged surface forms must remap cleanly."""
+        from knowledge_graph.extractor.schemas import ExtractedRelationship, Extraction
+
+        a = ExtractedEntity(name="Season 5", type="Event")
+        b = ExtractedEntity(name="Season 5 finale", type="Event")
+        rel = ExtractedRelationship(
+            source="Season 5 finale",
+            target="Season 5",
+            predicate="PART_OF",
+            evidence_span="The Season 5 finale wraps Season 5.",
+            confidence=0.9,
+            provenance_tag="EXTRACTED",
+        )
+        deduped, rename_map = dedupe_within_doc([a, b])
+        remapped = rel.model_copy(
+            update={
+                "source": rename_map.get(rel.source, rel.source),
+                "target": rename_map.get(rel.target, rel.target),
+            }
+        )
+        # Both endpoints now resolve to the surviving entity ("Season 5").
+        assert remapped.source == "Season 5"
+        assert remapped.target == "Season 5"
+        # Self-loop after dedup is fine — Extraction validation passes.
+        Extraction(entities=deduped, relationships=[remapped])
+
+
+class TestBackendFactory:
+    def test_make_backend_anthropic(self) -> None:
+        backend = make_backend("anthropic", ExtractorSettings(api_key="test"))
+        assert backend.__class__.__name__ == "AnthropicBackend"
+
+    def test_make_backend_openai(self) -> None:
+        backend = make_backend(
+            "openai", ExtractorSettings(api_key="test", base_url="http://localhost:11434/v1")
+        )
+        assert backend.__class__.__name__ == "OpenAIBackend"
+
+    def test_make_backend_mock(self) -> None:
+        backend = make_backend("mock", ExtractorSettings())
+        assert backend.__class__.__name__ == "MockBackend"
+
+    def test_make_backend_unknown(self) -> None:
+        with pytest.raises(ValueError, match="unknown LLM backend"):
+            make_backend("xyz", ExtractorSettings())

@@ -32,20 +32,30 @@ def _is_match(a: str, b: str, threshold: int) -> bool:
 
 def dedupe_within_doc(
     entities: list[ExtractedEntity], *, threshold: int = DEFAULT_THRESHOLD
-) -> list[ExtractedEntity]:
+) -> tuple[list[ExtractedEntity], dict[str, str]]:
     """Merge entities with matching normalized names *within the same type*.
 
     Aliases from merged entities are unioned and the longer description wins.
     Cross-type collisions (e.g., a Character and a Concept with the same name)
     are intentionally NOT merged — type drives identity.
 
+    Returns ``(deduped_entities, rename_map)`` where ``rename_map`` carries
+    every original surface form → its canonical (first-seen) name. Callers
+    that hold relationship references must re-map ``source`` / ``target``
+    through this map before re-validating, otherwise post-dedup orphans will
+    fail validation.
+
     >>> a = ExtractedEntity(name="Sheldon Cooper", type="Character")
     >>> b = ExtractedEntity(name="Dr. Sheldon Cooper", type="Character", aliases=["Shelly"])
-    >>> [e.name for e in dedupe_within_doc([a, b])]
+    >>> ents, rm = dedupe_within_doc([a, b])
+    >>> [e.name for e in ents]
     ['Sheldon Cooper']
+    >>> rm == {"Sheldon Cooper": "Sheldon Cooper", "Dr. Sheldon Cooper": "Sheldon Cooper"}
+    True
     """
     out: list[ExtractedEntity] = []
     norm_keys: list[str] = []
+    rename_map: dict[str, str] = {}
 
     for ent in entities:
         norm = _normalize(ent.name)
@@ -55,13 +65,15 @@ def dedupe_within_doc(
                 continue
             if _is_match(norm, existing_norm, threshold):
                 _merge_into(out, i, ent)
+                rename_map[ent.name] = out[i].name
                 merged = True
                 break
         if not merged:
             out.append(ent)
             norm_keys.append(norm)
+            rename_map[ent.name] = ent.name
 
-    return out
+    return out, rename_map
 
 
 def _merge_into(out: list[ExtractedEntity], i: int, incoming: ExtractedEntity) -> None:
