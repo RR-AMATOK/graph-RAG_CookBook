@@ -84,6 +84,112 @@ class IngestReport:
         path.write_text(json.dumps(asdict(self), indent=2, sort_keys=True), encoding="utf-8")
 
 
+@dataclass
+class ExtractCorpusResult:
+    """Output of :func:`extract_corpus` — everything an evaluator needs without graph writes."""
+
+    docs: list[CanonicalDoc]
+    canonicalization_errors: list[str]
+    # All chunks across all docs (flattened).
+    chunks: list[Chunk]
+    # chunk_id -> ExtractionResult, preserves cache-hit distinction.
+    extractions: dict[str, ExtractionResult]
+    # Aggregated structural metrics (chunk_grounding, span_grounding, predicate_type_ok).
+    hallucination: HallucinationReport
+    # Cost aggregates (only counts cache-MISS calls).
+    chunks_extracted: int
+    chunks_cache_hits: int
+    cost_input_tokens: int
+    cost_output_tokens: int
+    cost_cache_read_tokens: int
+    cost_usd: float
+    prompt_version: str
+
+
+def extract_corpus(
+    *,
+    settings: IngestSettings,
+    extractor: Extractor | None = None,
+) -> ExtractCorpusResult:
+    """Canonicalize → chunk → extract. **No graph writes.**
+
+    Used by both :func:`ingest_corpus` (which adds graph writes on top) and
+    by the eval / prompt-comparison flows (which want extractions but don't
+    need a populated graph).
+
+    Args:
+        settings: Paths + per-component settings (chunker, extractor).
+        extractor: Pre-built extractor. Default constructs one from
+            ``settings.extractor`` and ``settings.cache_dir``.
+    """
+    sources = []
+    if settings.flat_dir is not None:
+        sources.append((settings.flat_dir, settings.flat_repo, "flat"))
+    if settings.nested_dir is not None:
+        sources.append((settings.nested_dir, settings.nested_repo, "nested"))
+    if not sources:
+        raise ValueError("extract_corpus requires at least one of flat_dir / nested_dir")
+
+    logger.info("canonicalizing %d source dir(s) into %s", len(sources), settings.corpus_out)
+    docs, errors = canonicalize_corpus(sources, corpus_root=settings.corpus_out, write=True)
+    logger.info("canonicalized %d docs (%d errors)", len(docs), len(errors))
+
+    if extractor is None:
+        ex_settings = settings.extractor
+        if ex_settings.cache_root is None:
+            # Materialize cache_root in a fresh settings copy so callers don't see mutation.
+            from dataclasses import replace as _replace
+
+            ex_settings = _replace(ex_settings, cache_root=settings.cache_dir)
+        extractor = Extractor(ex_settings)
+
+    all_chunks: list[Chunk] = []
+    extractions: dict[str, ExtractionResult] = {}
+    chunks_extracted = 0
+    chunks_cache_hits = 0
+    cost_input_tokens = 0
+    cost_output_tokens = 0
+    cost_cache_read_tokens = 0
+    total_cost_usd = 0.0
+    hallucination_reports: list[HallucinationReport] = []
+
+    for doc in docs:
+        chunks = chunk_document(
+            doc_id=doc.frontmatter_obj.doc_id,
+            canonical_path=doc.frontmatter_obj.canonical_path,
+            body=doc.body,
+            settings=settings.chunker,
+        )
+        all_chunks.extend(chunks)
+        for chunk in chunks:
+            result = extractor.extract(chunk)
+            extractions[chunk.chunk_id] = result
+            if result.cached:
+                chunks_cache_hits += 1
+            else:
+                chunks_extracted += 1
+                cost_input_tokens += result.usage.input_tokens
+                cost_output_tokens += result.usage.output_tokens
+                cost_cache_read_tokens += result.usage.cache_read_tokens
+                total_cost_usd += result.usage.cost_usd
+            hallucination_reports.append(score_extraction(result.extraction, chunk_text=chunk.text))
+
+    return ExtractCorpusResult(
+        docs=docs,
+        canonicalization_errors=errors,
+        chunks=all_chunks,
+        extractions=extractions,
+        hallucination=aggregate_hallucination(hallucination_reports),
+        chunks_extracted=chunks_extracted,
+        chunks_cache_hits=chunks_cache_hits,
+        cost_input_tokens=cost_input_tokens,
+        cost_output_tokens=cost_output_tokens,
+        cost_cache_read_tokens=cost_cache_read_tokens,
+        cost_usd=round(total_cost_usd, 6),
+        prompt_version=settings.extractor.prompt_version,
+    )
+
+
 def ingest_corpus(
     *,
     settings: IngestSettings,
@@ -106,75 +212,37 @@ def ingest_corpus(
     started = datetime.now(UTC)
     run_id = started.strftime("%Y%m%dT%H%M%SZ")
 
-    sources = []
-    if settings.flat_dir is not None:
-        sources.append((settings.flat_dir, settings.flat_repo, "flat"))
-    if settings.nested_dir is not None:
-        sources.append((settings.nested_dir, settings.nested_repo, "nested"))
-    if not sources:
-        raise ValueError("ingest_corpus requires at least one of flat_dir / nested_dir")
-
-    logger.info("canonicalizing %d source dir(s) into %s", len(sources), settings.corpus_out)
-    docs, errors = canonicalize_corpus(sources, corpus_root=settings.corpus_out, write=True)
-    logger.info("canonicalized %d docs (%d errors)", len(docs), len(errors))
-
-    if extractor is None:
-        ex_settings = settings.extractor
-        if ex_settings.cache_root is None:
-            ex_settings = ExtractorSettings(
-                model=ex_settings.model,
-                max_output_tokens=ex_settings.max_output_tokens,
-                cache_root=settings.cache_dir,
-                prompt_version=ex_settings.prompt_version,
-                api_key=ex_settings.api_key,
-                max_retries=ex_settings.max_retries,
-            )
-        extractor = Extractor(ex_settings)
+    extracted = extract_corpus(settings=settings, extractor=extractor)
 
     if graph_client is None:
         graph_client = GraphClient.connect()
     ensure_schema(graph_client)
     builder = GraphBuilder(client=graph_client)
 
-    chunks_total = 0
-    chunks_extracted = 0
-    chunks_cache_hits = 0
-    cost_input_tokens = 0
-    cost_output_tokens = 0
-    cost_cache_read_tokens = 0
-    total_cost_usd = 0.0
-    hallucination_reports: list[HallucinationReport] = []
-
-    for doc in docs:
+    # chunk_id → chunk for the ingest loop; we walk docs in order to preserve
+    # per-doc grouping for upsert_document.
+    chunks_by_id = {c.chunk_id: c for c in extracted.chunks}
+    for doc in extracted.docs:
         builder.upsert_document(doc.frontmatter_obj)
-        chunks = chunk_document(
-            doc_id=doc.frontmatter_obj.doc_id,
-            canonical_path=doc.frontmatter_obj.canonical_path,
-            body=doc.body,
-            settings=settings.chunker,
-        )
-        chunks_total += len(chunks)
-        for chunk in chunks:
-            result = extractor.extract(chunk)
-            if result.cached:
-                chunks_cache_hits += 1
-            else:
-                chunks_extracted += 1
-                cost_input_tokens += result.usage.input_tokens
-                cost_output_tokens += result.usage.output_tokens
-                cost_cache_read_tokens += result.usage.cache_read_tokens
-                total_cost_usd += result.usage.cost_usd
-
+        for chunk_id, result in extracted.extractions.items():
+            chunk = chunks_by_id[chunk_id]
+            if chunk.doc_id != doc.frontmatter_obj.doc_id:
+                continue
             builder.write_extraction(
                 doc_fm=doc.frontmatter_obj, chunk=chunk, extraction=result.extraction
             )
-            # Pass chunk.text so the scorer computes the lenient chunk-grounding
-            # metric (the actual hallucination floor) alongside the strict
-            # span-grounding writing-style metric.
-            hallucination_reports.append(score_extraction(result.extraction, chunk_text=chunk.text))
 
     finished = datetime.now(UTC)
-    halluc = aggregate_hallucination(hallucination_reports)
+    halluc = extracted.hallucination
+    chunks_total = len(extracted.chunks)
+    chunks_extracted = extracted.chunks_extracted
+    chunks_cache_hits = extracted.chunks_cache_hits
+    cost_input_tokens = extracted.cost_input_tokens
+    cost_output_tokens = extracted.cost_output_tokens
+    cost_cache_read_tokens = extracted.cost_cache_read_tokens
+    total_cost_usd = extracted.cost_usd
+    docs = extracted.docs
+    errors = extracted.canonicalization_errors
     report = IngestReport(
         run_id=run_id,
         started_at=started.isoformat(),

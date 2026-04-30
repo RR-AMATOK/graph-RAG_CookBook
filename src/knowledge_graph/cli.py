@@ -94,6 +94,26 @@ _OPT_NUM_CTX = typer.Option(
         "a custom --base-url. Ignored by OpenAI proper."
     ),
 )
+_OPT_COMPARE_PROMPTS = typer.Option(
+    "v0,v1",
+    "--compare-prompts",
+    help=(
+        "Comma-separated baseline,candidate prompt versions to A/B compare. "
+        "Each version corresponds to a file at config/extraction_prompts/<v>.txt. "
+        "The candidate's metrics are diffed against the baseline's; if "
+        "regression thresholds are exceeded, exit code is non-zero."
+    ),
+)
+_OPT_GOLDENS = typer.Option(
+    Path("evals/golden_set.jsonl"),
+    "--goldens",
+    help=(
+        "Path to golden_set.jsonl. When non-empty, enables reference-based "
+        "metrics (entity F1, per-type F1, coverage, relationship F1). "
+        "When the file is empty / missing, the comparison falls back to "
+        "structural metrics only (chunk_grounding, span_grounding, etc.)."
+    ),
+)
 
 
 @app.command()
@@ -209,6 +229,125 @@ def ingest(
     if report.docs_failed > 0 or report.flagged_count > 0:
         # Surface non-zero exit so CI / cron jobs notice flagged extractions
         # without yet enforcing a hard threshold (Sprint 2.5+: gate on rate).
+        sys.exit(1)
+
+
+@app.command(name="eval")
+def eval_cmd(
+    flat_dir: Path | None = _OPT_FLAT_DIR,
+    nested_dir: Path | None = _OPT_NESTED_DIR,
+    flat_repo: str = _OPT_FLAT_REPO,
+    nested_repo: str = _OPT_NESTED_REPO,
+    corpus_out: Path = _OPT_CORPUS_OUT,
+    runs_dir: Path = _OPT_RUNS_DIR,
+    cache_dir: Path = _OPT_CACHE_DIR,
+    reference: bool = _OPT_REFERENCE,
+    log_level: str = _OPT_LOG_LEVEL,
+    backend: str = _OPT_BACKEND,
+    model: str | None = _OPT_MODEL,
+    base_url: str | None = _OPT_BASE_URL,
+    api_key_env: str | None = _OPT_API_KEY_ENV,
+    num_ctx: int | None = _OPT_NUM_CTX,
+    compare_prompts: str = _OPT_COMPARE_PROMPTS,
+    goldens: Path = _OPT_GOLDENS,
+) -> None:
+    """A/B-compare two prompt versions on the same corpus.
+
+    Extracts the corpus once at each prompt version (cache-first; bumping
+    the version forces a fresh extraction), aggregates per-doc predictions,
+    and scores against goldens (when present) plus the existing structural
+    metrics. Prints a side-by-side table and writes
+    ``runs/<id>/comparison.json``. Exits non-zero on regression.
+    """
+    from datetime import UTC
+    from datetime import datetime as _dt
+
+    from evals.harness.prompt_eval import compare_prompts as _compare
+    from evals.harness.prompt_eval import format_comparison
+
+    logging.basicConfig(
+        level=getattr(logging, log_level.upper(), logging.INFO),
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+
+    if reference:
+        ref_root = Path("examples/reference-corpus")
+        flat_dir = flat_dir or (ref_root / "flat")
+        nested_dir = nested_dir or (ref_root / "nested")
+
+    if flat_dir is None and nested_dir is None:
+        typer.echo("error: must supply --flat-dir, --nested-dir, or --reference", err=True)
+        raise typer.Exit(code=2)
+
+    versions = [v.strip() for v in compare_prompts.split(",") if v.strip()]
+    if len(versions) != 2:
+        typer.echo(
+            f"error: --compare-prompts must be exactly two comma-separated versions; got {versions!r}",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    baseline_version, candidate_version = versions
+
+    chosen_model = model or _DEFAULT_MODEL_PER_BACKEND.get(backend, "claude-sonnet-4-7")
+    extractor_settings = ExtractorSettings(
+        backend=backend,
+        model=chosen_model,
+        cache_root=cache_dir,
+        base_url=base_url,
+        api_key_env=api_key_env,
+        num_ctx=num_ctx,
+    )
+    settings = IngestSettings(
+        flat_dir=flat_dir,
+        nested_dir=nested_dir,
+        flat_repo=flat_repo,
+        nested_repo=nested_repo,
+        corpus_out=corpus_out,
+        runs_dir=runs_dir,
+        cache_dir=cache_dir,
+        extractor=extractor_settings,
+    )
+    typer.echo(
+        f"[eval] backend={backend} model={chosen_model} "
+        f"baseline={baseline_version} candidate={candidate_version}",
+        err=True,
+    )
+
+    report = _compare(
+        baseline_version=baseline_version,
+        candidate_version=candidate_version,
+        settings=settings,
+        goldens_path=goldens,
+    )
+
+    typer.echo("")
+    typer.echo(format_comparison(report))
+
+    run_id = _dt.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    out_path = runs_dir / run_id / "comparison.json"
+    report.write_json(out_path)
+    typer.echo(f"  comparison: {out_path}")
+
+    # Default regression gates — pragmatic Sprint 2.6 thresholds. Sprint 3+
+    # will pull these from evals/thresholds.yaml.
+    regressions: list[str] = []
+    if report.delta_chunk_grounding < -0.03:
+        regressions.append(f"chunk_grounding regressed by {-report.delta_chunk_grounding:.3f}")
+    if report.delta_predicate_type_ok < -0.03:
+        regressions.append(f"predicate_type_ok regressed by {-report.delta_predicate_type_ok:.3f}")
+    if report.delta_entity_f1 is not None and report.delta_entity_f1 < -0.05:
+        regressions.append(f"entity_f1 regressed by {-report.delta_entity_f1:.3f}")
+    if report.delta_relationship_f1 is not None and report.delta_relationship_f1 < -0.05:
+        regressions.append(f"relationship_f1 regressed by {-report.delta_relationship_f1:.3f}")
+
+    if regressions:
+        typer.echo("")
+        typer.echo(
+            f"[eval] candidate {candidate_version} regresses vs {baseline_version}:",
+            err=True,
+        )
+        for r in regressions:
+            typer.echo(f"  - {r}", err=True)
         sys.exit(1)
 
 
